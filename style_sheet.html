@@ -1,0 +1,80 @@
+<style>
+  h1{
+    text-align: center;
+    border: 2px solid #333333;
+    padding: 20px;
+  }
+  div{
+    text-align: center;
+  }
+
+  .csv_upload_form{
+    display: block;
+    position: relative;
+    opacity: 1;
+    pointer_event: auto;
+    text-align: center;
+    .dotted_box{
+      border: 2px dotted #333333;
+      padding: 20px;
+
+    }
+    .input_dnd_box{
+      text-align: center;
+      position: relative;
+      height: 40px;
+    }
+    input{
+      position: absolute;
+      inset: 0; //親要素にピッタリ合わせる？
+      opacity: 0; //透明
+    }
+    .textarea_filenamelist{
+      resize: none;
+      height: 100%;
+      width: 90%; //元478px
+    }
+
+    .text_info{
+      font-size: 90%;
+    }
+
+    .is-hidden{
+      display: none !important;
+    }
+
+  }
+
+  .main_process_progressing_page{
+    opacity: 1;
+    text-align: center;
+    .dotted_box{
+      border: 2px dotted #333333;
+      padding: 20px;
+
+    }
+    .progress_area{
+      position: relative;
+      pointer_event: none;
+      top: 100px;
+      left: 5px;
+
+      .progress_bar{
+        opacity: 1;
+        pointer_event: none;
+
+        width: 450px;
+        height: 70px;
+      }
+    }
+  }
+
+  .download_form_page{
+    p{
+      text-align: center;
+    }
+    .text_info{
+      font-size: 80%;
+    }
+  }
+</style>

@@ -1,0 +1,45 @@
+<div id="first_page" class="csv_upload_form">
+  <form>
+    <div class="dotted_box">
+      <div class="input_dnd_box">
+        <p>
+          [ここにCSVファイルをドラッグアンドドロップ]<br>
+          [またはここをクリック]
+        </p>
+        <input name="uploadFiles" id="upfiles" type="file" accept="text/csv" multiple>
+      </div>
+    </div>
+
+    <textarea class="textarea_filenamelist" id="filenameList" rows="5" cols="33" readonly>[選択ファイル名]:&NewLine;</textarea>
+
+    <div class="text_info">
+      <p>※アップロードできるCSVファイルは気象庁が公開している"単一地点の時別値"の「<a href="https://www.data.jma.go.jp/risk/obsdl/index.php" target="_blank" rel="noreferrer noopener">過去の気象データ</a>」のCSVファイル(項目は「気温、降水量(前1時間)、日照時間(前1時間)、現地気圧」)のみとなります。</p>
+    </div>
+  </form>
+</div>
+
+<div id="second_page" class="download_form_page">
+  <p>出力ファイル名:
+  <input type="text" id="download_filename">
+  <select id="filetype_dropdownlist">
+    <option value="xlsx">.xlsx(Excel)</option>
+    <option value="pdf">.pdf(PDF)</option>
+  </select>
+  </p>
+  <fieldset>
+    <legend>出力オプション</legend>
+    <form id="select_output_options">
+        <input type="radio" id="option_select" name="option" value="total_only" checked />
+        <label for="total_only">全期間集計ページのみ</label> 
+        <input type="radio" id="option_select" name="option" value="append_verbose" />
+        <label for="append_verbose">全期間&詳細ページ</label>
+    </form>
+  </fieldset>
+  <div class="text_info">
+    <p>※出力オプション「全期間&詳細ページ」を指定時の際、出力ファイル種類が「.pdf(PDF)」の場合、各集計ページに基づいた個別のグラフページが追加で出力されます。<br>
+    また出力ファイル種類が「.xlsx(Excel)」の場合は、追加で年別の集計ページが出力されます。</p>
+  </div>
+  <div align="center">
+    <button id="execute_button">アップロード&処理開始</button>
+  </div>
+</div>

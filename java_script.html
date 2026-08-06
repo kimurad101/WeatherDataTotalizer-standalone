@@ -1,0 +1,545 @@
+<script>
+/*
+！V8ランタイム環境限定！
+＝メモ＝
+for文内のawait sleep関数が機能しないため、全面的に書き直し。promise.allでアップロード処理を待つようにする。
+google.script.runもfile readerもpromiseにラッピングさせる。
+https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
+
+全体的な処理は「アップロード->チェック->本処理->ダウンロード」だが、「アップロード->チェック」の部分において、
+個別のファイルへの対応自体は非同期処理で行うが、全体的には同期処理で行う。
+そのため、アップロードとチェックは全てのファイルの非同期処理が完了するまでは、処理を待つよう書き直しする。
+*/
+
+//※AI(gemini)による解説ポイント1:「JavaScriptで async/await を使って非同期処理を待機（リピートやスリープ）させるためには、その関数が必ず Promise オブジェクトを返す必要があります。」
+
+
+  //==========================================関数エリア==========================================
+
+  //スリープ関数(sleepやdelay替わり。)
+  //参考元:https://qiita.com/teloppy_com/items/cd483807813af5a4a38a
+  //書式:await sleep(ミリ秒)
+  //読み慣れないため、読みやすい形にしたもの。
+  //※new Promiseを使用した関数で、アロー関数を使用しない方法の場合は必ず「return」を付けて、Promiseオブジェクトを返すようにすること！
+  //※AI(gemini)による解説ポイント2(アロー関数のメリット):「アロー関数の省略記法 () => new Promise(...) を使っています。この表記は波括弧 {} を省くことで、生成した Promise を自動的に return します。そのため、呼び出し側で await sleep(1000) と書いたときに、Promiseの完了（タイマー終了）を正しく待つことができます。」
+  //※AI(gemini)による解説ポイント3:「return がない関数(function構文)は、内部でどれだけ時間がかかる処理（setTimeout）を始めても、呼び出し元には即座に undefined を返して終了します。await undefined は何も待たずに次の行へ進むため、すぐに処理が完了してしまいます。」
+  function sleep(delay_time){
+    return new Promise((rf) => setTimeout(rf, delay_time)); //単位はミリ秒。
+  }
+
+  //「google.script.run」関数のPromise化関数
+  //(同期的に制御したいため。)
+  //参考元:https://www.330k.info/essay/gas_google_script_run_convert_promise/
+  //書式:GscriptRun((GAS側の関数),(引数1),(引数n..))
+  //受け取る場合は「GScriptRun((GAS側の関数),(引数1),(引数n..)).then((コールバック関数))」、例外を取得する場合は「GScriptRun((GAS側の関数),(引数1),(引数n..)).catch((コールバック関数))」とする。
+  //※withSuccessHandlerでもwithSuccessHandlerのコールバック関数内でエラーが発生すると、withFailureHandlerのコールバック関数が実行される。
+  function GScriptRun(gas_function_name,...gas_function_args){ //引数はまとめて配列として扱う(スプレッド構文)。
+    return new Promise((resolv,reject) => {
+      google.script.run.withSuccessHandler((...s) =>{
+        resolv(...s);
+      }).withFailureHandler((...f) => {
+        reject(...f);
+      })[gas_function_name](...gas_function_args); //ドットではなく配列で関数名を指定することで、任意の関数名を実行できるようになる。
+    });
+  }
+
+  //Fileオブジェクトからbase64文字列に変換する処理。(非同期)
+  function FileToBase64(file_obj){
+    return new Promise((resolv,reject) => {
+    //ファイル読み込み&アップロード開始
+    const file_reader = new FileReader;
+    file_reader.onload = (read_obj) => {
+      const read_content = read_obj.target.result;
+      const conv_base64_data = read_content.split(',')[1]; //base64に変換されたデータ
+      resolv(conv_base64_data); //base64に変換したデータの文字列を返す。
+    };
+    file_reader.onerror = () =>{
+      reject(file_reader.error); //エスカレーション
+    };
+    //(.onload)の内容を実行
+    file_reader.readAsDataURL(file_obj);
+    });
+  }
+
+  //base64文字列からBlobオブジェクトに変換する処理。
+  //引用元:https://qiita.com/rc_code/items/150003f016287750cf34
+  function Base64ToBlob(base64_str,mimetype){
+    let binary = atob(base64_str.replace(/^.*,/,''));
+    let buffer = new Uint8Array(binary.length);
+    for(let i = 0; i < binary.length; i++){
+      buffer[i] = binary.charCodeAt(i);
+    }
+    //Blobオブジェクト生成
+    try{
+      if(mimetype.length == 0){
+        throw new Error("MIMEタイプが未指定です。");
+      }
+
+      let blob_obj = new Blob([buffer.buffer], {type: mimetype});
+      return blob_obj;
+
+    }catch(err){
+      console.log(err);
+      return null;
+    }
+    
+  }
+
+  //ファイル名の禁止文字チェック
+  function FileNameChecker(filename){
+    //様々な環境で不具合の原因になる禁止文字が入っていないかチェック。(クライアント側へのバグ、XSS対策)
+    const illegal_char_array = ["/","\\",":",";","*","?","\'","\"","<",">","|","&","%","#","$",".",",","@"];
+    const name_check_illegal_char_result = illegal_char_array.some(illegal_char => filename.includes(illegal_char));
+    return name_check_illegal_char_result;
+  }
+
+  //プログレスバー
+  //bar_value:0~100まで。
+  let ProgressBar = class{
+    constructor(){      
+      //シングルトンパターン
+      //参考元:https://qiita.com/wooooo/items/4cb72979f9e23aef12c8
+      //参考元:https://zenn.dev/morinokami/books/learning-patterns-1/viewer/singleton-pattern
+      if(ProgressBar.instance){
+        return ProgressBar.instance; //既にインスタンスがある場合は、新たに作らず同じインスタンスを返して共有化する。
+      }
+      this.max_param = 0;
+      this.current_param = 0;
+      this.progress_bar_element = document.getElementById("main_progress_bar");
+
+      ProgressBar.instance = this; //初回のみインスタンスを生成する。
+    }
+
+    get getBarValue(){
+      return this.current_param;
+    }
+
+    get getBarMaxValue(){
+      return this.max_param;
+    }
+
+    set setMaxValue(max_num){
+      if(typeof(max_num) != 'number' || (max_num < 1 && max_num > 100)){
+        throw new ValueError("もう一度、1～100までの正の数値を指定してください。");
+      }else{
+        //最大値変更した場合、現在の値は初期化される。
+        this.current_param = 0;
+        this.max_param = max_num;
+        this.progress_bar_element.value = 0;
+      }
+    }
+
+    //プログレスバーの現在値を設定
+    addBarValue(){
+      if(typeof(this.max_param) != 'number' || (this.max_param < 1 && this.max_param > 100)){
+        throw new ValueError("最大値が正しく設定されていません。1～100までの正の数値を指定してください。");
+      }else{
+        //反映
+        this.current_param++;
+        this.progress_bar_element.value = this.current_param / this.max_param * 100;
+      }
+    }
+
+    resetBarValue(){
+      //リセット
+      this.current_param = 0;
+      this.progress_bar_element.value = 0;
+    }
+  }
+
+  //ダイアログメッセージ生成
+  //[msg_type]:(0:information,1:question,2:error)
+  //[is_confirm]:(false:OKのみ,true:OK[trueを返す]orキャンセル[falseを返す])
+  function dialog_msg(msg,msg_type = 0,is_confirm = false){
+    //アイコン(Unicode絵文字)
+    const error_emoji = String.fromCodePoint(0x26A0);
+    const question_icon = "（?）"
+    let emoji_icon = "（i）";
+    if(msg_type == 2){
+      emoji_icon = error_emoji;
+    }else if(msg_type == 1){
+      emoji_icon = question_icon;
+    }
+
+    //メッセージ加工
+    const print_message = emoji_icon + "\n" + msg
+
+    if(is_confirm){
+      return button_result = confirm(print_message);
+    }else{
+      alert(print_message);
+      return undefined;
+    }
+  }
+
+  //セッションナンバー生成(目的:アップロードファイルの名前重複防止、ファイルの後片付け)
+  function GenerateSessionNumber(){
+    //アップロード後のファイル名[セッションNo]決定(命名規則:[ランダム二桁]YY[下二桁]MMDDHHmmss)
+    const upload_date = new Date();
+    const upload_year_doubledegit = String(upload_date.getYear());
+    const upload_month = String(upload_date.getMonth() + 1).padStart(2,'0');
+    const upload_day = String(upload_date.getDate()).padStart(2,'0');
+    const upload_hour = String(upload_date.getHours()).padStart(2,'0');
+    const upload_minute = String(upload_date.getMinutes()).padStart(2,'0');
+    const upload_second = String(upload_date.getSeconds()).padStart(2,'0');
+    const random_number_doubledegit = Math.floor(Math.random() * 90) + 10; //範囲:10~99
+    //「RRYYMMDDHHmmss」(2桁目ゼロパディング済み。固定14桁)
+    const execute_upload_session_num_str = random_number_doubledegit + upload_year_doubledegit + upload_month + upload_day + upload_hour + upload_minute + upload_second;
+
+    return execute_upload_session_num_str;
+  }
+
+  //エラー発生した時点で全ての処理を中止する。
+  async function UploadCsvFromClient(send_file_obj,session_num_str){
+    try{
+      //アップロード前準備
+      //ファイル名:セッションNo_temp_(受信した元のCSVファイル名)
+      //(セッションNo(14桁)+"_temp_"(6桁)=20桁)
+      const new_filename = session_num_str + "_temp_" + send_file_obj.name;
+      console.log(send_file_obj.name + "->" + new_filename);
+
+      //アップロード前処理
+      //ハンドラから戻り値を受取
+      /*
+      //let progress_bar_for_csv_upload = ProgressBar.barSelect(0);
+
+      function upload_on_success(){
+        //プログレスバーの現在の値を更新
+        progress_bar_for_csv_upload.addBarValue();
+      }
+      */
+      //Base64に変換
+      const send_file_base64 = await FileToBase64(send_file_obj);
+
+      //ファイル読み込み&アップロード開始
+      //GAS側の関数実行&データ送信
+      //await GScriptRun("UploadCsvFiles",send_file_base64,new_filename).then(upload_on_success()).catch((err) => {throw new Error('アップロード処理中にGAS側にて例外が発生しました。詳細:'+ err)});
+      await GScriptRun("UploadCsvFiles",send_file_base64,new_filename).catch((err) => {throw 'アップロード処理中にGAS側にて例外が発生しました。詳細:'+ err});
+
+      //アップロード完了処理待ち
+      let uploaded_file_count = undefined;
+      await GScriptRun("CheckUploadCsvFileCount",new_filename).then((c) => {uploaded_file_count = c}).catch((err) => {throw 'アップロード処理中にGAS側にて例外が発生しました。詳細:'+ err});
+      
+      while(uploaded_file_count === undefined){
+        await sleep(1000);
+      }
+
+      return new_filename;
+
+    }catch(err){
+      throw new Error("[upload]: " + err);//エスカレーション
+    }
+  }
+
+  //ダウンロード処理
+  async function DownloadFileFromGASToJS(download_fileid,request_filetype,request_filename){
+    try{
+      let mime_type = "";  
+      if(request_filetype === "xlsx"){
+        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      }else if(request_filetype === "pdf"){
+        mime_type = "application/pdf"
+      }else{
+        throw "ファイルタイプが不正です。";
+      }
+
+      //ハンドラから戻り値を受取
+      let download_is_complete = false;
+      let download_is_failed = false;
+      let recv_b64_data = "";
+      /*
+      function download_result(return_result){
+        recv_b64_data = return_result;
+        if(typeof(recv_b64_data) == "string"){ //正しく届いているか、文字列(base64)であるかを確認。
+          download_is_complete = true;
+        }else{
+          download_is_failed = true;
+        }
+      }
+      */
+
+      //ダウンロード開始
+      /*
+      google.script.run.withSuccessHandler(download_result).withFailureHandler(() => {
+        throw 'アップロード後の確認中に例外が発生しました。処理を中止します。';
+      }).SendCompletedFile(download_fileid,request_filetype);
+      */
+      await GScriptRun("SendCompletedFile",download_fileid,request_filetype).then((b) => {
+        recv_b64_data = b;
+        if(typeof(recv_b64_data) == "string"){ //正しく届いているか、文字列(base64)であるかを確認。
+          download_is_complete = true;
+        }else{
+          download_is_failed = true;
+        }
+      }).catch((err) => {throw 'アップロード後の確認中に例外が発生しました。処理を中止します。詳細:'+ err});
+
+      //待機処理
+      /*
+      for(let wait_count = 0; wait_count <= 360; wait_count++){
+        await sleep(1000); //1秒待機
+        if(download_is_complete == true || download_is_failed == true){
+          break;
+        }
+      }
+      */
+      if(download_is_complete == false && download_is_failed == true){
+        //文字列ではないもの(nullやundefined等)が返ってきた場合、エラーを出す。
+        throw 'ダウンロードに失敗しました。処理を中止します。';
+      }
+
+      //ローカルでダウンロード(Blob->ファイルに変換)開始
+      let recv_blob_obj = Base64ToBlob(recv_b64_data,mime_type);
+      let download_element = document.createElement("a");
+      download_element.rel="noopener noreferrer"
+      download_element.href = URL.createObjectURL(recv_blob_obj);
+      download_element.target = '_blank';
+      download_element.download = request_filename;
+      download_element.click();
+
+    }catch(err){
+      /*
+      const warning_emoji = String.fromCodePoint(0x26A0);
+      const err_msg = "\n[download]: "+ err;
+      alert(warning_emoji + err_msg);
+      console.log(err_msg);
+      return false;
+      */
+      throw "\n[download]: "+ err;
+    }
+  }
+
+  //本処理&プログレスバー処理
+  async function ManagementTotalizationMain(uploadfiles_list,download_order,option_value_str){
+    const download_filename = download_order.file_name;
+    const download_filetype = download_order.file_type;
+    console.log(download_order);
+    console.log(download_filename);
+    console.log(download_filetype);
+    //プログレスバーはプロセス全体(アップロード～本処理完了)までを対象とする。(ダウンロード部分を除く)
+    const progress_bar = new ProgressBar();
+
+    //プログレスバーの最大値設定
+    progress_bar.setMaxValue = 3;
+    
+    //セッション番号生成
+    const session_number = GenerateSessionNumber();
+    console.log(session_number);
+
+    //オプション種別
+    let option_append_verbose_pages = false;
+    console.log(option_value_str);
+    if(option_value_str === "append_verbose"){
+      //「全期間&年別集計ページ」が指定された場合。
+      option_append_verbose_pages = true;
+    }
+
+    try{
+      //一斉アップロード処理。1つでもエラーが発生した場合は中止。
+      //※大本のasync指定の関数に戻ってくる値がある場合は、アロー関数の一時的な関数にも含めて必ずreturnをつけること。
+      const upload_function = Array.from(uploadfiles_list).map(async (file) => { return await UploadCsvFromClient(file,session_number)}); //ファイルの個数分だけ動的に関数を実行。
+      const uploaded_filename_list = await Promise.all(upload_function).catch((err_result) => {throw new Error(err_result)}); 
+      progress_bar.addBarValue(); //+1
+
+      //バリデーションチェック
+      let validation_check_result = undefined;
+      let gas_result_failed_msg = "";
+      //参考元:https://zenn.dev/luvmini511/articles/77a9dfa015bb55
+      const validation_check_func = Array.from(uploaded_filename_list).map(async (uploaded_filename) => {return await GScriptRun("JmaCsvValidationCheck",uploaded_filename)}); //ファイルの個数分だけ動的に関数を実行。
+      await Promise.allSettled(validation_check_func).then(((j) => {
+        //バリデーションチェック失敗(関数)由来のエラーとGAS側のエラーを分別。
+        const json_obj = j.filter((d) => d.status === "fulfilled").map((d) => JSON.parse(d.value));
+        const rej_obj = j.filter((c) => c.status === "rejected").map((d) => d.reason);
+        const failed_msg_list = json_obj.filter((m) => m.msg !== "done").map((f) => "[ファイル名]:" + f.filename + "\n[理由]: " +f.msg).join('\n');
+
+        if(rej_obj.length != 0 || failed_msg_list.length != 0){
+          if(rej_obj.length != 0){
+            //関数以外の例外を出力。
+            gas_result_failed_msg = "GAS側にて例外が発生しました。\n[メッセージ]: " + rej_obj.join('\n');
+          }else{
+            //関数側の例外を出力。
+            gas_result_failed_msg = "検証に失敗しました。\n" + failed_msg_list;
+          }
+          validation_check_result = false;
+
+        }else{
+          //Promiseの結果に"rejected"がまったくなく、なおかつ全てのJSONオブジェクトの"msg"が「done」のみであれば成功とみなす。
+          validation_check_result = true;
+        }
+      }));
+
+      if(!validation_check_result){
+        const validation_check_func = Array.from(uploaded_filename_list).map(async (uploaded_filename) => {return await GScriptRun("DeleteUploadCsvFile",uploaded_filename)}); //ファイルの個数分だけ動的に関数を実行。
+        await Promise.allSettled(validation_check_func); //削除処理実行(結果の合否は問わない。)
+        throw gas_result_failed_msg;
+      }else{
+        progress_bar.addBarValue(); //+2
+      }
+
+      //GAS側のPromiseは限定的な用途(非同期から同期処理に変換)のみでしか動かない(実質サポートされていない)ため、クライアント側から指示を投げる形式に変更。
+
+      //作業用シート作成&インポート処理
+      const totalize_book_fileid = await GScriptRun("MakeTotalizationWheaterBook",session_number);
+
+      //console.log(totalize_book_fileid);
+
+      //加工処理開始
+      const import_func = Array.from(uploaded_filename_list).map(async (uploaded_filename) => {return await GScriptRun("ConvJmaCsv", uploaded_filename,totalize_book_fileid,option_append_verbose_pages)}); //ファイルの個数分だけ動的に関数を実行。
+      const merge_result = await Promise.all(import_func);
+      progress_bar.addBarValue(); //+3
+      console.log(merge_result);
+      
+      //仕上げ処理
+      //const totalize_max_period_count = merge_result.reduce((sum,c) => {return sum + JSON.parse(c).totalize_period_count},0); //総期間の行数の合計
+      const totalize_max_period_count = merge_result.reduce((sum,c) => {return sum + c.totalize_period_count},0); //総期間の行数の合計
+      //const ob_point_name = [...new Set(merge_result.map((v) => {return JSON.parse(v).observation_point}))].join(","); //観測地点名
+      const ob_point_name = [...new Set(merge_result.map((v) => {return v.observation_point}))].join(","); //観測地点名
+      //const ob_point_name = [...new Set(merge_result.sort())].join(",");
+      console.log(ob_point_name);
+      console.log("max_period_count:" + totalize_max_period_count);
+
+      //指示内容をJSONオブジェクトにして送信する。
+      const send_json_obj = {"file_type": download_filetype,"session_number": session_number,"observation_point_name":ob_point_name ,"totalize_fileid": totalize_book_fileid,"total_period_count": totalize_max_period_count,"append_pages": option_append_verbose_pages};
+
+      console.log(send_json_obj);
+
+      //次の処理に引き継ぎ、成功すればプログレスバーの値を加算する。
+      await GScriptRun("TotalizationWheatherParameters",send_json_obj).then(() => {progress_bar.addBarValue()}).catch((err) => {throw new Error('集計中にGAS側にて例外が発生しました。詳細:'+ err)});
+
+      //ダウンロード処理
+      await DownloadFileFromGASToJS(totalize_book_fileid,download_filetype,download_filename).catch((err) => {throw new Error('ダウンロード中にGAS側にて例外が発生しました。詳細:'+ err)});
+      dialog_msg("処理が完了しました。ダウンロードフォルダをご確認ください。"); //全処理完了。
+      //google.script.host.close(); スタンドアロン版では動作せず。
+
+      //return totalize_book_fileid; //生成された処理結果スプレッドシートのファイルIDを戻す。
+
+    }catch(err){
+      progress_bar.resetBarValue();  //プログレスバーの表示を初期化。
+      throw "[main]: " + err.stack; //エスカレーション
+    }
+  }
+
+  //============================================HTML描写時処理エリア============================================
+
+  //表示関係処理
+  const first_page_screen_element = document.getElementById("first_page");//アップロード部分 -アップロードフォーム画面
+  const main_process_screen_element = document.getElementById("main_process"); //本処理&プログレスバー部分 - 処理中画面
+  const second_page_screen_element = document.getElementById("second_page"); //ダウンロード部分 -ダウンロードフォーム画面
+
+  //初期表示(CSVアップロード部分のみ表示。)
+  main_process_screen_element.style.display = "none"; //本処理&プログレスバー
+
+  //CSVアップロード部分 - ファイル名リスト表示処理
+  const upload_field_element = document.getElementById("upfiles");
+
+  upload_field_element.addEventListener('change',() => {
+    let list = document.getElementById('filenameList');
+    //ファイル選択の有無
+    if(upload_field_element){
+      //console.log(upload_field_element.files.length);
+      list.value = "[選択ファイル名]:\n";
+      if(upload_field_element.files.length > 1){
+        let name_list = [];
+        for(let files_count = 0; files_count < upload_field_element.files.length; files_count++){
+          name_list.push(upload_field_element.files[files_count].name);
+        }
+        list.value += name_list.join('\n');
+      }else if(upload_field_element.files.length == 1){
+        list.value += upload_field_element.files[0].name;
+      }
+    }
+  },false);
+
+  //2ページ目 - 処理開始ボタン押下後処理
+  const execute_button_element = document.getElementById("execute_button");
+  const download_filename_element = document.getElementById("download_filename"); //ダウンロード部分 - ファイル名入力部分
+  const filetype_dropdownlist_element = document.getElementById("filetype_dropdownlist"); //ダウンロード部分 - ファイルタイプ選択部分
+
+  //処理開始前
+  execute_button_element.addEventListener("click",async () => {
+    const input_elements = document.getElementsByName("uploadFiles");
+    const option_select_radiobutton_element = document.getElementById("select_output_options"); //ダウンロード部分 -オプション設定部分
+    const option_list = option_select_radiobutton_element.elements['option'];
+    const uploadfiles_list = input_elements[0].files;
+    const download_filename_str = download_filename_element.value;
+    const filetype_str = filetype_dropdownlist_element.value;
+    let download_order_list = {"file_name": "","file_type": ""};
+
+    let selected_option_value = undefined;
+
+    //オプション選択
+    //console.log(option_list);
+    selected_option_value = option_list.value;
+    //console.log(selected_option_value);
+
+    try{
+      //画面表示切り替え
+      first_page_screen_element.style.display = "none";
+      main_process_screen_element.style.display = "block";
+      if(uploadfiles_list.length == 0){
+        throw 'アップロードファイルを選択してください。';
+      }
+
+      //確認処理
+      //アップロード項目のチェック
+      let upload_filenames = [];
+      for await(check_uploadfile of uploadfiles_list){
+        //ファイルサイズは50MB(52428800byte)の約33%減の35MB(35127296byte)未満まで。
+        //(Base64による33%のサイズ増とGASのアップロードサイズ制限50MBのため。)
+        //制限以上にファイルを転送する方法はあるらしいが、かなり難しいこと(=そのままの利用不可避であること)と、処理制限時間(6分)に間に合わなさそうなので却下。
+        if(check_uploadfile.size > 35127296){
+          throw '1ファイルにつき、最大ファイルサイズ(35MB)を超えたファイルを含んでいます。\n' + check_uploadfile.name + '\n選択しなおしてください。';
+            
+        }else if(check_uploadfile.type != 'text/csv'){
+          throw 'CSVファイルではないファイルを含んでいます。\n' + check_uploadfile.name + '\n選択しなおしてください。';
+        }else{
+          upload_filenames.push(check_uploadfile.name);
+        }
+      }
+
+      //ダウンロード項目のチェック
+      //文字列が0または半角と全角の空白文字のみが入力されていた場合はエラーを出す。
+      if(download_filename_str.length > 0 && download_filename_str !== " " && download_filename_str !== "　"){
+        let final_filename = "";
+        const illegal_char_is_exist = FileNameChecker(download_filename_str);
+        if(illegal_char_is_exist == true){ 
+          throw "禁止文字(/ \ : ; * ? \' \" < > | & . , @)を含んでいます。もう一度ファイル名を入力してください。";
+        }else{
+          if(download_filename_str.length > 255){
+            throw "出力ファイル名が長すぎます。もう一度、出力ファイル名を入力してください。";
+          }
+
+          //強制的に空白文字をアンダーバーに置き換える。
+          final_filename_str = download_filename_str.replace(/\s+/g,"_") + "." + filetype_str;
+          //alert("filename: " + final_filename_str + " filetype: " + filetype_str,"req_file");
+          download_order_list.file_name = final_filename_str;
+          download_order_list.file_type = filetype_str;
+        }
+
+      }else{
+        throw "出力ファイル名を入力してください。";
+      }
+      
+      //確認ダイアログ
+      const execute_confirm_result = dialog_msg("以下のファイルを処理します。実行しますか？\n" + upload_filenames.join('\n'),1,true);
+
+      if(execute_confirm_result){
+        //本処理実行。
+        second_page_screen_element.style.display = "none"
+        await ManagementTotalizationMain(uploadfiles_list,download_order_list,selected_option_value).catch((err) => {throw new Error(err)}); //ダウンロード処理までの間にエラーが発生した場合は最初の画面に戻る。
+      
+      }
+
+    }catch(err){
+      //エラーが発生した場合はダイアログを表示しつつ、最初の画面に戻る。
+      dialog_msg(err,2);
+      console.log(err);
+      
+    }finally{
+      //元の画面表示に切り替え
+      main_process_screen_element.style.display = "none";
+      second_page_screen_element.style.display = "block";
+      first_page_screen_element.style.display = "block";
+    }
+  });
+
+</script>

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <title>気象庁 過去の気象データ集計アプリ</title>
+    <?!= include_file('style_sheet'); ?>
+  </head>
+  <body>
+    <h1>気象庁 過去の気象データ集計アプリ</h1>
+    <p>本Webアプリは、処理対象となる気象庁の過去の気象データを選択し実行することで、気象データの集計後のファイルを出力(ダウンロード)することができます。</p>
+    <?!= include_file('csv_upload'); ?>
+    <?!= include_file('main_process'); ?>
+    <p>作成者:Daisuke Kimura(<a href="https://github.com/kimurad101" target="_blank" rel="noreferrer noopener">GitHub</a>)</p>
+  </body>
+  <?!= include_file('java_script'); ?>
+</html>
+
