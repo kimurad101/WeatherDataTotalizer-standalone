@@ -1,4 +1,4 @@
-本リポジトリは就職活動の際のポートフォリオ用として作成したWebアプリのGASスクリプト(スタンドアロン版)のものです。<br>
+本リポジトリは就職活動のポートフォリオ用としてGAS(Google Apps Script)にて作成したWebアプリ(スタンドアロン版)を構成するものです。<br>
 (技術スタック:GAS,JS,html)<br>
 <br>
 [本Webアプリを開く](https://script.google.com/macros/s/AKfycbzE9-rrBWczBvXDD-1HJWN0mDYXWsXIzSbTtXKkbNTVFC3X8ZmqRs6dWWP2N4BY9bSRMQ/exec)<br>
