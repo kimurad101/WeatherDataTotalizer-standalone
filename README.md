@@ -1,8 +1,10 @@
-本リポジトリは就職活動の際のポートフォリオ用として作成したGASスクリプト(スタンドアロン版)のものです。
-(技術スタック:GAS,JS,html)
+本リポジトリは就職活動の際のポートフォリオ用として作成したGASスクリプト(スタンドアロン版)のものです。<br>
+(技術スタック:GAS,JS,html)<br>
 <br>
-本リポジトリのファイルはGAS(Google Apps Script)のプロジェクト内のファイル(「README.md」と「.gitignore」を除く)となっています。  
-[各種ファイル解説]  
+<br>
+本リポジトリのファイルはGAS(Google Apps Script)のプロジェクト内のファイル(「README.md」と「.gitignore」を除く)となっています。<br>
+<br>
+[各種ファイル解説]<br>
 「README.md」：本ファイル。<br>
 「appsscript.json」:本プロジェクトの設定ファイル。<br>
 「wa_env_config.js(gs)」:本プロジェクトの環境変数ファイル。<br>
