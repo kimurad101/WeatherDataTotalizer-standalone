@@ -1,6 +1,10 @@
 本リポジトリは就職活動の際のポートフォリオ用として作成したGASスクリプト(スタンドアロン版)のものです。<br>
 (技術スタック:GAS,JS,html)<br>
 <br>
+[本Webアプリを開く](https://script.google.com/macros/s/AKfycbzE9-rrBWczBvXDD-1HJWN0mDYXWsXIzSbTtXKkbNTVFC3X8ZmqRs6dWWP2N4BY9bSRMQ/exec)<br>
+<br>
+[本Webアプリの使用方法](https://drive.google.com/file/d/1XYsmolWC9d6blSSIVc_AoIbU6NjlsqMd/view?usp=sharing)<br>
+<br>
 本リポジトリのファイルはGAS(Google Apps Script)のプロジェクト内のファイル(「README.md」と「.gitignore」を除く)となっています。<br>
 <br>
 [各種ファイル解説]<br>
