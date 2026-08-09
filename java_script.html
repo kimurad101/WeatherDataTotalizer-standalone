@@ -1,34 +1,32 @@
 <script>
 /*
+weather-totalize_standalone(frontend) ver.0.0.2
+
+ver.0.0.2[2026/8/5]:コンテナバインド版からスタンドアロン版を制作。
+ver.0.0.1[2026/05/12~2026/8/5]:初版(コンテナバインド版)。
+
+目標:必要最低限に動作できる状態を目指す。
+
 ！V8ランタイム環境限定！
 ＝メモ＝
 for文内のawait sleep関数が機能しないため、全面的に書き直し。promise.allでアップロード処理を待つようにする。
 google.script.runもfile readerもpromiseにラッピングさせる。
-https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
+参考元:https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
 
 全体的な処理は「アップロード->チェック->本処理->ダウンロード」だが、「アップロード->チェック」の部分において、
 個別のファイルへの対応自体は非同期処理で行うが、全体的には同期処理で行う。
 そのため、アップロードとチェックは全てのファイルの非同期処理が完了するまでは、処理を待つよう書き直しする。
 */
 
-//※AI(gemini)による解説ポイント1:「JavaScriptで async/await を使って非同期処理を待機（リピートやスリープ）させるためには、その関数が必ず Promise オブジェクトを返す必要があります。」
-
-
   //==========================================関数エリア==========================================
-
   //スリープ関数(sleepやdelay替わり。)
   //参考元:https://qiita.com/teloppy_com/items/cd483807813af5a4a38a
   //書式:await sleep(ミリ秒)
-  //読み慣れないため、読みやすい形にしたもの。
-  //※new Promiseを使用した関数で、アロー関数を使用しない方法の場合は必ず「return」を付けて、Promiseオブジェクトを返すようにすること！
-  //※AI(gemini)による解説ポイント2(アロー関数のメリット):「アロー関数の省略記法 () => new Promise(...) を使っています。この表記は波括弧 {} を省くことで、生成した Promise を自動的に return します。そのため、呼び出し側で await sleep(1000) と書いたときに、Promiseの完了（タイマー終了）を正しく待つことができます。」
-  //※AI(gemini)による解説ポイント3:「return がない関数(function構文)は、内部でどれだけ時間がかかる処理（setTimeout）を始めても、呼び出し元には即座に undefined を返して終了します。await undefined は何も待たずに次の行へ進むため、すぐに処理が完了してしまいます。」
   function sleep(delay_time){
     return new Promise((rf) => setTimeout(rf, delay_time)); //単位はミリ秒。
   }
 
   //「google.script.run」関数のPromise化関数
-  //(同期的に制御したいため。)
   //参考元:https://www.330k.info/essay/gas_google_script_run_convert_promise/
   //書式:GscriptRun((GAS側の関数),(引数1),(引数n..))
   //受け取る場合は「GScriptRun((GAS側の関数),(引数1),(引数n..)).then((コールバック関数))」、例外を取得する場合は「GScriptRun((GAS側の関数),(引数1),(引数n..)).catch((コールバック関数))」とする。
@@ -87,7 +85,7 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
 
   //ファイル名の禁止文字チェック
   function FileNameChecker(filename){
-    //様々な環境で不具合の原因になる禁止文字が入っていないかチェック。(クライアント側へのバグ、XSS対策)
+    //様々な環境で不具合の原因になる禁止文字が入っていないかチェック。(Windows環境を想定しつつ、クライアント側へのバグとXSS対策)
     const illegal_char_array = ["/","\\",":",";","*","?","\'","\"","<",">","|","&","%","#","$",".",",","@"];
     const name_check_illegal_char_result = illegal_char_array.some(illegal_char => filename.includes(illegal_char));
     return name_check_illegal_char_result;
@@ -199,15 +197,6 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
       console.log(send_file_obj.name + "->" + new_filename);
 
       //アップロード前処理
-      //ハンドラから戻り値を受取
-      /*
-      //let progress_bar_for_csv_upload = ProgressBar.barSelect(0);
-
-      function upload_on_success(){
-        //プログレスバーの現在の値を更新
-        progress_bar_for_csv_upload.addBarValue();
-      }
-      */
       //Base64に変換
       const send_file_base64 = await FileToBase64(send_file_obj);
 
@@ -247,23 +236,9 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
       let download_is_complete = false;
       let download_is_failed = false;
       let recv_b64_data = "";
-      /*
-      function download_result(return_result){
-        recv_b64_data = return_result;
-        if(typeof(recv_b64_data) == "string"){ //正しく届いているか、文字列(base64)であるかを確認。
-          download_is_complete = true;
-        }else{
-          download_is_failed = true;
-        }
-      }
-      */
+
 
       //ダウンロード開始
-      /*
-      google.script.run.withSuccessHandler(download_result).withFailureHandler(() => {
-        throw 'アップロード後の確認中に例外が発生しました。処理を中止します。';
-      }).SendCompletedFile(download_fileid,request_filetype);
-      */
       await GScriptRun("SendCompletedFile",download_fileid,request_filetype).then((b) => {
         recv_b64_data = b;
         if(typeof(recv_b64_data) == "string"){ //正しく届いているか、文字列(base64)であるかを確認。
@@ -274,14 +249,6 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
       }).catch((err) => {throw 'アップロード後の確認中に例外が発生しました。処理を中止します。詳細:'+ err});
 
       //待機処理
-      /*
-      for(let wait_count = 0; wait_count <= 360; wait_count++){
-        await sleep(1000); //1秒待機
-        if(download_is_complete == true || download_is_failed == true){
-          break;
-        }
-      }
-      */
       if(download_is_complete == false && download_is_failed == true){
         //文字列ではないもの(nullやundefined等)が返ってきた場合、エラーを出す。
         throw 'ダウンロードに失敗しました。処理を中止します。';
@@ -297,13 +264,6 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
       download_element.click();
 
     }catch(err){
-      /*
-      const warning_emoji = String.fromCodePoint(0x26A0);
-      const err_msg = "\n[download]: "+ err;
-      alert(warning_emoji + err_msg);
-      console.log(err_msg);
-      return false;
-      */
       throw "\n[download]: "+ err;
     }
   }
@@ -315,6 +275,7 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
     console.log(download_order);
     console.log(download_filename);
     console.log(download_filetype);
+    
     //プログレスバーはプロセス全体(アップロード～本処理完了)までを対象とする。(ダウンロード部分を除く)
     const progress_bar = new ProgressBar();
 
@@ -323,7 +284,7 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
     
     //セッション番号生成
     const session_number = GenerateSessionNumber();
-    console.log(session_number);
+    console.log("session_number: " + session_number);
 
     //オプション種別
     let option_append_verbose_pages = false;
@@ -335,7 +296,6 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
 
     try{
       //一斉アップロード処理。1つでもエラーが発生した場合は中止。
-      //※大本のasync指定の関数に戻ってくる値がある場合は、アロー関数の一時的な関数にも含めて必ずreturnをつけること。
       const upload_function = Array.from(uploadfiles_list).map(async (file) => { return await UploadCsvFromClient(file,session_number)}); //ファイルの個数分だけ動的に関数を実行。
       const uploaded_filename_list = await Promise.all(upload_function).catch((err_result) => {throw new Error(err_result)}); 
       progress_bar.addBarValue(); //+1
@@ -380,27 +340,17 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
       //作業用シート作成&インポート処理
       const totalize_book_fileid = await GScriptRun("MakeTotalizationWheaterBook",session_number);
 
-      //console.log(totalize_book_fileid);
-
       //加工処理開始
       const import_func = Array.from(uploaded_filename_list).map(async (uploaded_filename) => {return await GScriptRun("ConvJmaCsv", uploaded_filename,totalize_book_fileid,option_append_verbose_pages)}); //ファイルの個数分だけ動的に関数を実行。
       const merge_result = await Promise.all(import_func);
       progress_bar.addBarValue(); //+3
-      console.log(merge_result);
       
       //仕上げ処理
-      //const totalize_max_period_count = merge_result.reduce((sum,c) => {return sum + JSON.parse(c).totalize_period_count},0); //総期間の行数の合計
       const totalize_max_period_count = merge_result.reduce((sum,c) => {return sum + c.totalize_period_count},0); //総期間の行数の合計
-      //const ob_point_name = [...new Set(merge_result.map((v) => {return JSON.parse(v).observation_point}))].join(","); //観測地点名
       const ob_point_name = [...new Set(merge_result.map((v) => {return v.observation_point}))].join(","); //観測地点名
-      //const ob_point_name = [...new Set(merge_result.sort())].join(",");
-      console.log(ob_point_name);
-      console.log("max_period_count:" + totalize_max_period_count);
 
       //指示内容をJSONオブジェクトにして送信する。
       const send_json_obj = {"file_type": download_filetype,"session_number": session_number,"observation_point_name":ob_point_name ,"totalize_fileid": totalize_book_fileid,"total_period_count": totalize_max_period_count,"append_pages": option_append_verbose_pages};
-
-      console.log(send_json_obj);
 
       //次の処理に引き継ぎ、成功すればプログレスバーの値を加算する。
       await GScriptRun("TotalizationWheatherParameters",send_json_obj).then(() => {progress_bar.addBarValue()}).catch((err) => {throw new Error('集計中にGAS側にて例外が発生しました。詳細:'+ err)});
@@ -408,9 +358,6 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
       //ダウンロード処理
       await DownloadFileFromGASToJS(totalize_book_fileid,download_filetype,download_filename).catch((err) => {throw new Error('ダウンロード中にGAS側にて例外が発生しました。詳細:'+ err)});
       dialog_msg("処理が完了しました。ダウンロードフォルダをご確認ください。"); //全処理完了。
-      //google.script.host.close(); スタンドアロン版では動作せず。
-
-      //return totalize_book_fileid; //生成された処理結果スプレッドシートのファイルIDを戻す。
 
     }catch(err){
       progress_bar.resetBarValue();  //プログレスバーの表示を初期化。
@@ -467,9 +414,7 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
     let selected_option_value = undefined;
 
     //オプション選択
-    //console.log(option_list);
     selected_option_value = option_list.value;
-    //console.log(selected_option_value);
 
     try{
       //画面表示切り替え
@@ -510,7 +455,6 @@ https://zenn.dev/divsawa/articles/20260201_js-promise-async-await
 
           //強制的に空白文字をアンダーバーに置き換える。
           final_filename_str = download_filename_str.replace(/\s+/g,"_") + "." + filetype_str;
-          //alert("filename: " + final_filename_str + " filetype: " + filetype_str,"req_file");
           download_order_list.file_name = final_filename_str;
           download_order_list.file_type = filetype_str;
         }
