@@ -1167,8 +1167,7 @@ function SendCompletedFile(download_fileid,download_filetype){
       
 
     }else{
-      //Excelファイルの場合は、本ファイルをコピーした上でメニュー、varシートを消す。
-
+      //Excel
       //ファイルコピー
       const copy_ss_file = wheather_analysis_ss_file.makeCopy(temp_ss_filename,process_completed_folder);
       temp_file_id = copy_ss_file.getId();
