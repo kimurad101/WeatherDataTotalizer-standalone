@@ -1,6 +1,7 @@
 /*
-weather-totalize_standalone(backend) ver.0.0.2
+weather-totalize_standalone ver.0.0.3
 
+ver.0.0.3[2026/10/28]:フロントエンド側(java_script.html)にてスタックトレースなし(throw)の例外を表示できるように修正。関数「Base64ToBlob」の一部処理を変更。(引数チェックを先頭に、ついでに処理に関する解説コメントを一部追加。)
 ver.0.0.2[2026/8/5]:コンテナバインド版からスタンドアロン版を制作。
 ver.0.0.1[2026/05/12~2026/8/5]:初版(コンテナバインド版)。
 
@@ -79,6 +80,7 @@ function ConvJmaCsv(file_name,totalize_book_fileid,add_yearly_table = false){
 
     //最後行削除(内容が重複する可能性があるのと、最後の日付のデータが1時間分しかないため)
     csv_values.pop();
+    //Logger.log(csv_values[csv_values.length -1]);
 
     //年月範囲をユニークに取得
     const date_regex = /^\d{4}\/\d{1,2}\/\d{1,2} \d{1,2}:\d{2}:\d{2}/; //「YYYY/MM/DD HH:mm:ss」
@@ -93,8 +95,16 @@ function ConvJmaCsv(file_name,totalize_book_fileid,add_yearly_table = false){
     Logger.log(uniq_date_list);
     uniq_date_list[uniq_date_list.length - 1] = date_sort[date_sort.length - 1][0];
     uniq_date_list[0] = date_sort[0][0];
+    //let uniq_date_list = [...new Set(orig_uniq_date_str_list)];　//いらないかも？
+    //Logger.log(uniq_date_list);
 
     const uniq_date_count = uniq_date_list.length
+    Logger.log(uniq_date_list);
+    Logger.log(uniq_date_count);
+
+    //ファイル名とともにリストに追加。
+    //date_range_lists.push({"sheet_name": sheet_name,"unique_date_range": uniq_date_list});
+    //test_csv_sheet.getRange(1,1).setValues(uniq_date_list.join(','));
 
     //一時ブック作成
     let conv_book = SpreadsheetApp.create(process_csv_file_name.substring(0,process_csv_file_name.lastIndexOf(".")));
@@ -105,6 +115,9 @@ function ConvJmaCsv(file_name,totalize_book_fileid,add_yearly_table = false){
 
     //CSV内容貼り付け
     conv_csv_sheet.getRange(1, 1, csv_values.length,csv_values[0].length).setValues(csv_values);
+
+    //対象年月範囲を貼り付け
+    //conv_csv_sheet.getRange(1,5).setValue(uniq_date_list.join('_'));
 
     //ブック場所移動
     const book_file = DriveApp.getFileById(conv_fileid);
@@ -126,6 +139,14 @@ function ConvJmaCsv(file_name,totalize_book_fileid,add_yearly_table = false){
     result_sheet.activate();
     
     //集計
+    //ここで結果シートに各種項目の最大値、最低値、平均値を貼り付けるようにする。
+    //const totalize_params = uniq_date_list.map();
+    //result_sheet.getRange(2,1).setValues(totalize_params);
+    //const totalize_cells = uniq_date_list.map((d) => [d.replace(/^(\d{4})\/(\d{1,2})/,'$1年$2月'),"(最高気温)","(最低気温)","(平均気温)","(最大降水量)","(平均降水量)","(平均日照時間)","(最高気圧)","(最低気圧)","(平均気圧)"]);
+
+    //数式:「=MAX(INDIRECT("'data.csv-サンプル'!"&ADDRESS(MATCH(DATE(2025,5,23)+TIME(0,0,0),'data.csv-サンプル'!$A$1:$A$8789),2)&":"&ADDRESS(MATCH(DATE(2025,5,23)+TIME(23,0,0),'data.csv-サンプル'!$A$1:$A$8789),2)))」
+    //数式でも先頭日時と末尾日時を配列に記録しないとだめか・・・
+
     //CSVシートの最後行数を取得。
     const csv_sheet_max_row = csv_sheet.getLastRow();
 
@@ -145,6 +166,9 @@ function ConvJmaCsv(file_name,totalize_book_fileid,add_yearly_table = false){
       let totalize_position_num = 0;
       let args_str = "";
       let iferror_func_strs = ["",""];
+      
+      //Logger.log("start: " + datetime);
+      //Logger.log("end: " + end_of_month);
 
       //最終年月のデータ行の場合、月初日の日時を反映。
       if(datetime.toDateString() === end_of_month.toDateString()){
@@ -184,10 +208,12 @@ function ConvJmaCsv(file_name,totalize_book_fileid,add_yearly_table = false){
     const totalize_cells = uniq_date_list.map((d) => {
       return [d.match(/^(\d{4})\/(\d{1,2})/)[0].replace(/^(\d{4})\/(\d{1,2})/,'$1年$2月'),generate_jma_totalize_cell_formulas("temp","MAX",d,process_sheet_name,csv_sheet_max_row),generate_jma_totalize_cell_formulas("temp","MIN",d,process_sheet_name,csv_sheet_max_row),generate_jma_totalize_cell_formulas("temp","AVERAGEIF",d,process_sheet_name,csv_sheet_max_row),generate_jma_totalize_cell_formulas("rainfall","MAX",d,process_sheet_name,csv_sheet_max_row),generate_jma_totalize_cell_formulas("rainfall","AVERAGEIF",d,process_sheet_name,csv_sheet_max_row),generate_jma_totalize_cell_formulas("sunshine","AVERAGEIF",d,process_sheet_name,csv_sheet_max_row),generate_jma_totalize_cell_formulas("airpressure","MAX",d,process_sheet_name,csv_sheet_max_row),generate_jma_totalize_cell_formulas("airpressure","MIN",d,process_sheet_name,csv_sheet_max_row),generate_jma_totalize_cell_formulas("airpressure","AVERAGEIF",d,process_sheet_name,csv_sheet_max_row)]
     });
+    //const date_list_cells = uniq_date_list.map((d) => {return [d.match(/^(\d{4})\/(\d{1,2})/)[0].replace(/^(\d{4})\/(\d{1,2})/,'$1年$2月')]});
 
     //書き出し
     const append_start_cell_row = result_sheet.getLastRow() + 1;
     Logger.log("追記開始行: " + append_start_cell_row);
+    //const append_start_cell_row = 33;
     result_sheet.getRange(append_start_cell_row,1,totalize_cells.length,totalize_cells[0].length).setValues(totalize_cells);
     
     //年別集計処理(ファイルタイプがExcel[xlsx]の場合のみ。)
@@ -236,6 +262,9 @@ function ConvJmaCsv(file_name,totalize_book_fileid,add_yearly_table = false){
       yearly_table_sheet.getRange(totalize_start_cell_row,6).setHorizontalAlignment("right");
       yearly_table_sheet.getRange(totalize_start_cell_row,9).setHorizontalAlignment("right");
 
+      //集計ページ - 1ページ目罫線描写
+      //yearly_table_sheet.getRange(totalize_start_cell_row + 1,1,1,10).setBorder(true,true,true,true,true,true);
+
       //書式動的変更
       const yearly_totalize_end_cell_row = yearly_table_sheet.getLastRow();
       yearly_table_sheet.getRange(totalize_start_cell_row + 2,2,yearly_totalize_end_cell_row,4).setNumberFormat('0.0℃'); //気温
@@ -255,6 +284,7 @@ function ConvJmaCsv(file_name,totalize_book_fileid,add_yearly_table = false){
 
       //観測地表記引用
       yearly_table_sheet.getRange(totalize_start_cell_row,10).setFormula("='" + result_sheet.getSheetName() +"'!J1");//='結果'!J1
+      //(result_sheet,total_period_count,download_filetype
     }
 
   }catch(e){
@@ -309,8 +339,10 @@ function MakeTotalizationWheaterBook(session_num){
   const process_ss_file = templete_ss_file.moveTo(process_temp_forder);
   
   //結果シート作成
+  //let totalize_result_sheet = main_book.insertSheet().activate(); //結果シート
   let totalize_result_sheet = main_book.getSheets()[0].activate();
   totalize_result_sheet.setName("結果");
+  //main_book.moveActiveSheet(0); //結果シートを末尾に移動
 
   //セル反映
   const result_sheet_graph_page_last_row = 30; //グラフページ最終行
@@ -345,6 +377,17 @@ function MakeTotalizationWheaterBook(session_num){
   totalize_result_sheet.getRange(result_sheet_graph_page_last_row + 1,3).setHorizontalAlignment("right");
   totalize_result_sheet.getRange(result_sheet_graph_page_last_row + 1,6).setHorizontalAlignment("right");
   totalize_result_sheet.getRange(result_sheet_graph_page_last_row + 1,9).setHorizontalAlignment("right");
+  /*
+  //グラフページ - ヘッダー罫線描写
+  totalize_result_sheet.getRange(1,1,1,10).setBorder(true,true,true,true,true,true);
+  */
+  //集計ページ - 1ページ目ヘッダー部分罫線描写　(後でまとめて描写するからいらないと思う。)
+  //totalize_result_sheet.getRange(result_sheet_graph_page_last_row + 2,1,1,10).setBorder(true,true,true,true,true,true);
+
+
+  //メニューシート削除
+  //let menu_sheet = main_book.getSheetByName("メニュー");
+  //main_book.deleteSheet(menu_sheet);
 
   return process_ss_file.getId();
 }
@@ -365,6 +408,7 @@ function GenerateTotalizeGraphsPage(sheet,recv_config_obj){
   try{
     const last_row_number = sheet.getLastRow();
     //31ほどずれてしまう原因は、最終行番号を相対行数に当ててしまっているため。実データの長さを相対行数に当てるようにする。
+    //const date_cell_values = sheet.getRange(33,1,sheet.getLastRow(),1).getValues().filter(v => v !== "");
     const date_cell_values = sheet.getRange(33,1,last_row_number,1).getValues().filter(v => v[0].length > 0 || v[0] !== "");
     let max_data_count = date_cell_values.length;
 
@@ -394,9 +438,10 @@ function GenerateTotalizeGraphsPage(sheet,recv_config_obj){
       if(max_totalize_pages > 1){
         let left_move_param_cell_count = total_data_count - (result_sheet_totalize_page_max_row - 3);//残り移動セル数
         const copy_header_cells_range = sheet.getRange(result_sheet_totalize_page_max_row + 1,1,2,10); //コピー対象のヘッダーセル範囲
-        const max_data_cell_count = 28; //ヘッダー行分を除いたデータ行の最大行数
+        const max_data_cell_count = 28;
 
         //各ページの開始行算出のためにあえて0スタート。
+        //for(page_cnt = 0; page_cnt < max_totalize_pages - 1; page_cnt++){
         for(page_cnt = 0; page_cnt < max_totalize_pages; page_cnt++){
           const start_dynamic_row_count = result_sheet_totalize_page_max_row * (1 + page_cnt);
           const range_last_cell_row_number_offset = 1;
@@ -405,6 +450,7 @@ function GenerateTotalizeGraphsPage(sheet,recv_config_obj){
           const move_params_src_cells_range = sheet.getRange(start_dynamic_row_count + range_last_cell_row_number_offset,1,left_move_param_cell_count + 1,10); //移動対象の集計セル範囲
 
           const move_params_dst_cells_range = sheet.getRange(start_dynamic_row_count + move_start_cell_row_number_offset,1); //移動先のセル
+          //graph_dynamic_params_list.push({"start_row_number":result_sheet_totalize_page_max_row + 3,"max_data_count": left_move_param_cell_count});
 
           //グラフ 分割後集計ページ位置記録
           const now_start_row_number = start_dynamic_row_count + move_start_cell_row_number_offset;
@@ -449,7 +495,8 @@ function GenerateTotalizeGraphsPage(sheet,recv_config_obj){
     sheet.setColumnWidth(7,107);
 
     //各種折れ線グラフシート
-    //参考元:https://developers.google.com/apps-script/reference/spreadsheet/embedded-chart-builder?hl=ja
+    //タイトルは真ん中にならないため、ボツ。セルで代用。
+    //https://developers.google.com/apps-script/reference/spreadsheet/embedded-chart-builder?hl=ja
 
     //グラフ生成下準備
     let date_graph_x_range_lists = undefined;
@@ -601,6 +648,7 @@ function GenerateAppendGraphsPage(sheet,recv_config_obj){
   try{
     //コピー元となるヘッダーとグラフタイトルセルの範囲を指定。
     const header_and_titles_copy_from_range = sheet.getRange(1,1,30,10);
+    //const title_copy_from_range = sheet.getRange(17,1,10);
     let now_last_row_number = sheet.getLastRow();
     Logger.log("処理前の末尾行: " + now_last_row_number);
 
@@ -616,6 +664,7 @@ function GenerateAppendGraphsPage(sheet,recv_config_obj){
       Logger.log("処理中の末尾行: " + now_last_row_number + "(" + generate_graph_page_count + ")");
       //現在の末尾行より1つ下にヘッダーや各グラフタイトルをコピー。
       header_and_titles_copy_from_range.copyTo(sheet.getRange(now_last_row_number +1 ,1));
+      //title_copy_from_range.copyTo(sheet.getRange(now_last_row_number + 17,1));
 
       //集計期間表記
       const date_cell_values = sheet.getRange(start_row_number,1,28,1).getValues().filter(v => v[0].length > 0 || v[0] !== "");
@@ -625,7 +674,11 @@ function GenerateAppendGraphsPage(sheet,recv_config_obj){
       const totalize_date_str = start_cell_datetime_str + "~" + last_cell_datetime_str;
 
       //シートタイトル変更
+      Logger.log(now_last_row_number);
       sheet.getRange(now_last_row_number + 1,1).setValue(totalize_date_str); // YYYY/MM~YYYY/MM
+
+      //結果シート内の集計結果の書式を変更。
+      Logger.log(max_data_count);
 
       //ファイル種別ごとのグラフサイズ調整
       if(download_filetype === "xlsx"){
@@ -681,7 +734,9 @@ function TotalizationWheatherParameters(recv_param_json_obj){
   //やる処理4:「結果」シートにまとめた内容を、ダウンロードフォームにて事前に指定された指示を元にグラフを表示する。(PDFの場合は1ページに収めなければならない。)
   
   //パース
+  //const recv_params = JSON.parse(recv_param_json_obj);
   const recv_params = recv_param_json_obj;
+  //const recv_params = {"file_type": "pdf","observation_point_name": "千葉", "session_number": "251260724155448","totalize_fileid": "1Jyb-vHR0Wu_MjHVAmr0BEJUcsklmQwPn_Z2RJ3khLZQ","total_period_count": 123,"append_pages": true};
   
   Logger.log(recv_params);
   const filetype_list = ["xlsx","pdf"];
@@ -707,11 +762,15 @@ function TotalizationWheatherParameters(recv_param_json_obj){
     result_sheet.getRange(1,10).setValue(ob_point_name); //グラフページ 観測地点名
     result_sheet.getRange(31,10).setValue(ob_point_name); //集計1ページ目　観測地点名
 
+
+    //result_sheet.getRange(31,4).setValue(); //グラフページ 対象期間(途中:2026/7/22)(クライアント側で事前に全集計期間をまとめてソート化し、開始から終了期間を出したものを使うようにする。ここで出力しないと、PDF指定の際にコピーされないため。)
+
     //結果シート内の集計結果の書式を変更。
     let result_sheet_last_rows = result_sheet.getLastRow();
     const result_sheet_last_columns = result_sheet.getLastColumn();
     Logger.log(result_sheet_last_rows);
     Logger.log(result_sheet_last_columns);
+    //const result_sheet_totalize_values_range = result_sheet.getRange(2,result_sheet_last_columns,result_sheet_last_rows,result_sheet_last_columns);
 
     //書式動的変更
     result_sheet.getRange(result_sheet_graph_page_last_row + 3,2,result_sheet_last_rows,4).setNumberFormat('0.0℃'); //気温
@@ -822,28 +881,30 @@ function DateStringValidationCheck(datetime_str){
 
 //CSVファイルチェック処理
 function JmaCsvValidationCheck(csv_file_name){
-  //やらない処理:CSVの行や列を編集(追加、削除)すること(時間がかかりすぎることが予想されるため。)
-  //やる処理:気象庁のCSVファイルであるかの確認、異常値の検出(違うCSVファイルや異常値があればエラーを返す。問題がなければ取り込む。)
   //参考元:https://www.data.jma.go.jp/risk/obsdl/top/help3
 
   //しきい値設定
   //しきい値を超えている値があるCSVファイルは対象外ファイルとして扱う。
   const jma_csv_file_top_str = "ダウンロードした時刻："; //気象庁の先頭行文字列
-  const max_temp = 50.0; //最大気温
-  const min_temp = -100.0; //最低気温
-  const max_rainfall = 100.0; //最大降水量(前1時間あたり)
-  const min_rainfall = 0.0; //最大降水量(前1時間あたり)
-  const max_sunshine_hour = 400.0; //最大日照時間(前1時間あたり)
-  const min_sunshine_hour = 0.0; //最大日照時間(前1時間あたり)
-  const max_air_pressure = 1100; //最大現地気圧
-  const min_air_pressure = 860; //最低現地気圧
+  const max_temp = 50.0; //最大気温(根拠:)
+  const min_temp = -100.0; //最低気温(根拠:)
+  const max_rainfall = 100.0; //最大降水量(前1時間あたり)(根拠:)
+  const min_rainfall = 0.0; //最大降水量(前1時間あたり)(根拠:)
+  const max_sunshine_hour = 400.0; //最大日照時間(前1時間あたり)(根拠:)
+  const min_sunshine_hour = 0.0; //最大日照時間(前1時間あたり)(根拠:)
+  const max_air_pressure = 1100; //最大現地気圧(根拠:)
+  const min_air_pressure = 860; //最低現地気圧(根拠:)
 
   //クライアントに結果を送信(JSON)
   let result_json = undefined;
 
+  //やらない処理:CSVの行や列を編集(追加、削除)すること(時間がかかりすぎることが予想されるため。)
+  //やる処理:気象庁のCSVファイルであるかの確認、異常値の検出(違うCSVファイルや異常値があればエラーを返す。問題がなければ取り込む。)
+
   try{
     const check_csv_file = DriveApp.getFilesByName(csv_file_name);
     const check_csv_file_blob = check_csv_file.next().getBlob().getDataAsString('SHIFT_JIS');
+    //const check_csv_file_blob = check_csv_file.next().getBlob().getDataAsString();
 
     //空チェック
     if(check_csv_file_blob.trim() === ""){
@@ -964,6 +1025,11 @@ function JmaCsvValidationCheck(csv_file_name){
         check_air_pressure_param = true;
       }
 
+      //天気の値チェック(0-19,22-24,28,101)　ボツ
+      /*
+      const check_weather_param = (parse_check_csv_data_columns[weather_column_num] >= 0 && parse_check_csv_data_columns[weather_column_num] <= 19) || (parse_check_csv_data_columns[weather_column_num] >= 22 && parse_check_csv_data_columns[weather_column_num] >= 24) || parse_check_csv_data_columns[weather_column_num] == 28 || parse_check_csv_data_columns[weather_column_num] == 101;
+      */
+
       //チェック結果
       if(check_date_param == false || check_temp_param == false || check_rainfall_param == false || check_sunshine_hour_param == false || check_air_pressure_param == false){
         const print_rowcount = row_count + 1;
@@ -986,7 +1052,12 @@ function JmaCsvValidationCheck(csv_file_name){
         if(check_air_pressure_param == false){
           failure_reason = "現地気圧の値が不正です。\n" + "[位置]:"+ print_rowcount +"行目/" + "[値]:"+ parse_check_csv_data_columns[air_pressure_column_num];
         }
-
+        /*
+        if(check_weather_param == false){
+          Logger.log("天気の値が不正です。");
+          Logger.log("[位置]:"+ row_count +"行目/" + "[値]:"+ parse_check_csv_data_columns[weather_column_num]);
+        }
+        */
         Logger.log(failure_reason);
         param_is_invalid = true;
         //不正な値が混じっているCSVファイルは使用しないため、強制的にループを抜けた後にエラーを出す。
@@ -1084,7 +1155,6 @@ function SendCompletedFile(download_fileid,download_filetype){
 
   //参考元1:https://qiita.com/chovin/items/4647e4b62df9579996f0
   //参考元2:https://qiita.com/rc_code/items/150003f016287750cf34
-
   let process_is_failed = false;
   let download_blob = null;
   let whather_analysis_ss_filename = "";
@@ -1144,6 +1214,12 @@ function SendCompletedFile(download_fileid,download_filetype){
     whather_analysis_ss_filename = wheather_analysis_ss_file.getName();
     base_file_id = wheather_analysis_ss_file.getId();
 
+    //ダウンロード用スプレッドシートファイル作成&必要な項目を本スプレッドシートからコピー
+    /*
+    const execute_download_date = new Date();
+    const execute_download_date_str = Utilities.formatDate(execute_download_date,"JST","YYYYMMDD_HHmmss");
+    */
+
     //ファイル名:download-処理時刻-気象データCSV分析
     const temp_ss_filename = "download-" + download_filetype + "-" + wheather_analysis_ss_file.getName().substring(5);
 
@@ -1163,11 +1239,14 @@ function SendCompletedFile(download_fileid,download_filetype){
       }).join('&');
 
       //スプレッドシートからPDF形式に変換するためのURLを生成。
+      //get_blob_url = download_base_url + temp_file_id + "/export?" + query;
+
       get_blob_url = download_base_url + base_file_id + "/export?" + query;
       
 
     }else{
-      //Excel
+      //Excelファイルの場合は、本ファイルをコピーした上でメニュー、varシートを消す。
+
       //ファイルコピー
       const copy_ss_file = wheather_analysis_ss_file.makeCopy(temp_ss_filename,process_completed_folder);
       temp_file_id = copy_ss_file.getId();
