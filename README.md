@@ -32,7 +32,7 @@
 <br>
 
 ## [動作解説]
-<img src="https://raw.githubusercontent.com/kimurad101/WeatherDataTotalizer-standalone/master/process-flow-drawio.png" width="70%">
+<img src="https://raw.githubusercontent.com/kimurad101/WeatherDataTotalizer-standalone/master/process-flow-drawio.png" width="80%">
 
 <br>
 [1]:アクセス時にサーバー(バックエンド)側はアプリのトップページ用のHTMLのテンプレートファイル(standalone.html)をクライアント(フロントエンド)側に送信し、トップページの各種要素を他の外部ファイル(csv_upload.html等)から引用して描写するサーバー側の関数を実行してトップページをレンダリングする。<br>
