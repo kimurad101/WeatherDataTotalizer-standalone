@@ -47,10 +47,8 @@ function ConvJmaCsv(file_name,totalize_book_fileid,add_yearly_table = false){
 
     //CSVファイル取得
     const process_csv_file = uploaded_csv_file.next();
-    //const process_csv_file_id = process_csv_file.getId();
     const process_csv_file_name = process_csv_file.getName();
     const process_csv_file_mimetype = process_csv_file.getMimeType();
-    //const get_csv_file_blob = DriveApp.getFileById(process_csv_file_id).getBlob();
     const get_csv_file_blob = process_csv_file.getBlob();
 
     //アップロード済みのCSVファイルの本来のファイル名(セッションNo&拡張子抜き)をシート名とする。
