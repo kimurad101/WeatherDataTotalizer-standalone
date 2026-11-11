@@ -33,6 +33,7 @@
 
 ## [動作解説]
 <img src="https://raw.githubusercontent.com/kimurad101/WeatherDataTotalizer-standalone/master/process-flow-drawio.png" width="50%">
+※参考文献:尾崎惇史.図解即戦力 UMLのしくみと実装がこれ1冊でしっかりわかる教科書.技術評論社,2022年<br>
 <br>
 [1]:アクセス時にサーバー(バックエンド)側はアプリのトップページ用のHTMLのテンプレートファイル(standalone.html)をクライアント(フロントエンド)側に送信し、トップページの各種要素を他の外部ファイル(csv_upload.html等)から引用して描写するサーバー側の関数を実行してトップページをレンダリングする。<br>
 <br>
